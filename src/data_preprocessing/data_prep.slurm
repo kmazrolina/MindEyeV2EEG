@@ -9,9 +9,9 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu
 
-# # Full dataset takes ~200GB of disk space
+# # Full dataset takes ~190GB of disk space
 # raw eeg data -> ~130GB
-# images ->  
+# images -> ~10GB
 # preprocessed eeg data -> ~40GB
 
 data_dir=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data
