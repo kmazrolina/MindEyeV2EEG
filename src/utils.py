@@ -205,7 +205,9 @@ def count_params(model):
     
 def check_loss(loss):
     if loss.isnan().any():
-        raise ValueError('NaN loss')
+        return False
+        #raise ValueError('NaN loss')
+    return True
 
 def cosine_anneal(start, end, steps):
     return end + (start - end)/2 * (1 + torch.cos(torch.pi*torch.arange(steps)/(steps-1)))

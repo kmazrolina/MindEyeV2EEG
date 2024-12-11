@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --account=plgstabilityai-gpu-a100
 #SBATCH --partition=plgrid-gpu-a100
-#SBATCH --gres=gpu:2
-#SBATCH --nodes 4
-#SBATCH --ntasks-per-node 4
+#SBATCH --gres=gpu:4
+#SBATCH --nodes 1
+#SBATCH --ntasks-per-node 1
 #SBATCH --job=mindeye_train      
 #SBATCH --time=48:00:00          # total run time limit (HH:MM:SS)
 #SBATCH -e slurms/%j.err        # first create a "slurms" folder in current directory to store logs
@@ -19,8 +19,8 @@ source ../fmri/bin/activate
 # The following line converts your jupyter notebook into a python script runnable with Slurm
 jupyter nbconvert Train.ipynb --to python
 
-export NUM_GPUS=2  # Set to equal gres=gpu:#!
-export BATCH_SIZE=8 
+export NUM_GPUS=4  # Set to equal gres=gpu:#!
+export BATCH_SIZE=8
 export GLOBAL_BATCH_SIZE=$((BATCH_SIZE * NUM_GPUS))
 
 # Make sure another job doesnt use same port, here using random number
@@ -29,12 +29,13 @@ export HOSTNAMES=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export COUNT_NODE=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
 export ACCELERATE_LOG_LEVEL=debug
+
 echo MASTER_ADDR=${MASTER_ADDR}
 echo MASTER_PORT=${MASTER_PORT}
 echo WORLD_SIZE=${COUNT_NODE}
 
 # multisubject pretraining
-model_name="eeg_multisubject_fmri_init"
+model_name="eeg_multisubject_fmri_init_batch16_4GPUs_1"
 echo model_name=${model_name}
 
 data_path="/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data"
@@ -48,7 +49,7 @@ accelerate launch \
 --main_process_ip=$MASTER_ADDR \
 --main_process_port=$MASTER_PORT \
 --mixed_precision=fp16 \
-python Train.py \
+Train.py \
 --data_path=${data_path} \
 --model_name=${model_name} \
 --multi_subject \
@@ -63,7 +64,7 @@ python Train.py \
 --no-use_image_aug \
 --n_blocks=4 \
 --hidden_dim=1024 \
---ckpt_interval=999 \
+--ckpt_interval=1 \
 --ckpt_saving \
 --wandb_log \
 --preprocessing_method=THINGSEEG2 \
