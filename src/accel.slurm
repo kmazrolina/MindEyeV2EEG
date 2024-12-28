@@ -4,11 +4,11 @@
 #SBATCH --gres=gpu:2
 #SBATCH --nodes 1
 #SBATCH --ntasks-per-node 4
-#SBATCH --job=mindeye_no_fmri_use_prior_1subj   
+#SBATCH --job=mindeye_eeg_only_multisubj_63ch_200ms 
 #SBATCH --time=48:00:00          # total run time limit (HH:MM:SS)
 #SBATCH -e slurms/%j.err        # first create a "slurms" folder in current directory to store logs
 #SBATCH -o slurms/%j.out
-#SBATCH --mem=300GB
+#SBATCH --mem=800GB
 
 
 
@@ -35,7 +35,7 @@ echo MASTER_PORT=${MASTER_PORT}
 echo WORLD_SIZE=${COUNT_NODE}
 
 # multisubject pretraining
-model_name="eeg_only_use_difussion_prior_2GPUS_1SUBJ"
+model_name="eeg_only_multisubj_63ch_200ms"
 echo model_name=${model_name}
 
 data_path="/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data"
@@ -52,11 +52,11 @@ accelerate launch \
 Train.py \
 --data_path=${data_path} \
 --model_name=${model_name} \
---subj=1 \
+--multi_subject \
 --batch_size=${BATCH_SIZE} \
 --max_lr=3e-4 \
 --mixup_pct=.33 \
---num_epochs=100 \
+--num_epochs=150 \
 --use_prior \
 --prior_scale=30 \
 --clip_scale=1 \
@@ -64,10 +64,10 @@ Train.py \
 --use_image_aug \
 --n_blocks=4 \
 --hidden_dim=1024 \
---ckpt_interval=1 \
+--ckpt_interval=10 \
 --ckpt_saving \
 --wandb_log \
---preprocessing_method=THINGSEEG2_17ch_200ms #\
+--preprocessing_method=THINGSEEG2_63ch_200ms #\
 #--fmri_ckpt=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/train_logs/multisubject_subj01_1024hid_nolow_300ep
 
 # singlesubject finetuning

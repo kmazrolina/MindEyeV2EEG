@@ -16,16 +16,18 @@
 
 data_dir=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data
 
-# Download THINGSEEG2 raw data for all subjects 1-10
-python download_data.py --data_path $data_dir
+# # Download THINGSEEG2 raw data for all subjects 1-10
+# python download_data.py --data_path $data_dir
 
-# Prep image path info for model training 
-# this is not a resource heavy task
-python image_paths.py --data_path $data_dir
+# # Prep image path info for model training 
+# # this is not a resource heavy task
+# python image_paths.py --data_path $data_dir
 
-# Preprocess eeg (see preprocessing methods in load_eeg.py)
-python load_eeg.py $data_dir --sfreq 100 --sessionNumber 4
+# Generate image captions
+python image_captions.py --data_path $data_dir 
 
+# # Preprocess eeg (see preprocessing methods in load_eeg.py)
+# python load_eeg.py $data_dir --sfreq 100 --sessionNumber 4
 
 
 
