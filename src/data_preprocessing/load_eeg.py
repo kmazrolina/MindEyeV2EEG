@@ -70,6 +70,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    ### Create a Save Path 
+    if not os.path.isdir(args.savePath):
+            os.makedirs(args.savePath)
+
+    ### Make parameter Log 
     write_args_to_file(args,os.path.join(args.savePath,"parameters.txt"))
     if args.savePath is None:
         args.savePath = args.dataPath
