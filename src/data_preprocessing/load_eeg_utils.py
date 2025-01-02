@@ -1,6 +1,16 @@
 
 
-def epoching(sessions,dataPath,dataPart,sfreq,seed):
+def write_args_to_file(args, filename="args_output.txt"):
+    """
+        Quick Code to save parameters as a txt
+    """
+    with open(filename, "w") as f:
+        for arg, value in vars(args).items():
+            f.write(f"{arg}: {value}\n")
+
+            
+def epoching(args,dataPath,dataPart,seed):
+    
     """
         Load Your data and performs Trial Segmentation. Data that are provided are taken directly from raw_data files and must be a dictionary with keys:
             + raw_eeg_data - contains a matrix of chan x time
@@ -28,7 +38,15 @@ def epoching(sessions,dataPath,dataPart,sfreq,seed):
     import numpy as np
     from sklearn.utils import shuffle
 
+    sessions = args.sessionNumber;
+    sfreq  = args.sfreq
 
+     # Already Preprocessing as a position in a relative Timeseries (Computed with resampling freq, length of dataslice (based on trial))
+    
+    tbef = args.tbef; # In -t seconds -(How many seconds before)
+    taft = args.taft; # In t seconds (How many seconds After)
+    cutoff1 = (args.cutoff1 - tbef)*sfreq*(taft-tbef); # Input in -t seconds -(How many seconds before)
+    cutoff2 = (args.cutoff2 - tbef)*sfreq*(taft-tbef); # Input in  t seconds (How many seconds After)
     ### Loop across data collection sessions ###
     epoched_data = []
     img_conditions = []
@@ -65,29 +83,35 @@ def epoching(sessions,dataPath,dataPart,sfreq,seed):
 
 
         ### === Epoching === ###
-        if sfreq  == 1000: # Controlled by sfreq --> if we have lower than 1000 Sfreq we use 100ms before, 100ms of presenting 
-            epochs = mne.Epochs(raw, events, tmin=-.1, tmax=.1, baseline=(None,0),
-            preload=True) # Using baseline and SWAP 
-        else: # 0.2 before 0.8 s after - as in Things-EEG2
-            epochs = mne.Epochs(raw, events, tmin=-.2, tmax=.8, baseline=(None,0),
-            preload=True) # Using baseline and SWAP 
+        epochs = mne.Epochs(raw, events, tmin=tbef, tmax=taft, baseline=(None,0),
+        preload=True) # Using baseline and SWAP 
         del raw 
 
 
         ### === Resampling === ###
-        if sfreq < 1000: # if necessery resample to a give sfreq!
+        if sfreq != 1000: # if necessery resample to a give sfreq - if sfreq = 1000 dont bother because nothing will change 
             epochs.resample(sfreq)
         ch_names = epochs.info['ch_names'] # save new Ch_name and TImes from Epochs
         times = epochs.times # 
 
-
-        ### === Sort the data === ### 
         # #- Precautionary, and Important in Training Data (for Images were presented at random) and each session presents 2x half of Images
         data = epochs.get_data()
         events = epochs.events[:,2] # Gets ID of events
         img_cond = np.unique(events) # This is a list of All Image IDs in a given Session 
         del epochs
 
+
+        # === Cutoffing === ### - 
+        datacut = np.zeros([data.shape[0],data.shape[1],int(cutoff2 - cutoff1)])
+        if (cutoff1 != 0 and  cutoff2 != data.shape[2]) : # To avoid cutting off with full structure
+            for i in range(len(data)):
+                datacut[i,:,:] = data[i,:,int(cutoff1):int(cutoff2)]
+            data = datacut
+            times = times[int(cutoff1):int(cutoff2)]
+
+       
+        ### === Sort the data === ### 
+    
         # Select only a maximum number of EEG repetitions (For Test it was 20 times)
         if dataPart == "raw_eeg_test.npy":
             max_rep = 20
@@ -193,7 +217,7 @@ def mvnn(sessions, mvnn_dim,epoched_test, epoched_train):
 
 
 def mergeData(session, whitened_test, whitened_train, img_conditions_train,
-ch_names, times,repMean, seed):
+ch_names, times, seed):
     """
     Also almost unchange - i wanted it to be as close to the original as Possible!
     
@@ -234,6 +258,8 @@ ch_names, times,repMean, seed):
     # Shuffle the repetitions of different sessions
     idx = shuffle(np.arange(0, merged_test.shape[1]), random_state=seed)
     merged_test = merged_test[:,idx]
+
+
     # Insert the data into a dictionary
     test_dict = {
         'preprocessed_eeg_data': merged_test,
@@ -241,7 +267,7 @@ ch_names, times,repMean, seed):
         'times': times
     }
     del merged_test
-  
+    
 
     ### Merge and save the training data ###
     # Remember the data structure! It is not as straightforward as it seems: 4 Training sessions: Each with 8750 or so Images (Half Of All 165444) - Repeating 2 times
@@ -274,9 +300,6 @@ ch_names, times,repMean, seed):
     merged_train = merged_train[:,idx]
 
    # Own Adjustmenet - across concatenating repetitions to a single Dataset:
-    if repMean:
-        merged_train = np.mean(merged_train,1)
-
 
     # Insert the data into a dictionary
     train_dict = {
@@ -287,7 +310,7 @@ ch_names, times,repMean, seed):
 
     return test_dict, train_dict
 
-def checkData(test_dict, train_dict, *args, **kwargs):
+def checkData(test_dict, train_dict,argms, *args, **kwargs):
 
     """
         Performs data checks
@@ -302,7 +325,12 @@ def checkData(test_dict, train_dict, *args, **kwargs):
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
     import numpy as np
+    import os
 
+    ### Create a Folder with Checks
+    checkPath = os.path.join(argms.savePath,"checks",'sub-'+format(argms.currentSubjNum,'02'))
+    if not os.path.isdir(checkPath):
+        os.makedirs(checkPath)
     ### === Check whether Loaded Preprocessed data and our preprocessing is Coinciding === 
     # (!!!) Work in progress - not as intended -  
 
@@ -310,12 +338,15 @@ def checkData(test_dict, train_dict, *args, **kwargs):
     dataPrepTest = args[0] if len(args) > 0 else None
     dataPrepTrain = args[1] if len(args) > 1 else None
 
-    if dataPrepTest is not None and dataPrepTrain is not None:
+    if argms.sfreq == 100 and (dataPrepTest is not None and dataPrepTrain is not None):
+        
+        cutoff1 = int((argms.cutoff1 - argms.tbef)*100*(argms.taft-argms.tbef)); # Input in -t seconds -(How many seconds before)
+        cutoff2 = int((argms.cutoff2 - argms.tbef)*100*(argms.taft-argms.tbef)); # Input in  t seconds (How many seconds After)
 
         chanNames = ['Pz','Oz','POz']
         ### ger 3 reference Data for our own Things - for  PZ, Oz, POz
-        refDataTest  =  [dataPrepTest['preprocessed_eeg_data'][:,:,0,:], dataPrepTest['preprocessed_eeg_data'][:,:,4,:], dataPrepTest['preprocessed_eeg_data'][:,:,12,:]]
-        refDataTrain =  [dataPrepTrain['preprocessed_eeg_data'][:,:,0,:], dataPrepTrain['preprocessed_eeg_data'][:,:,4,:], dataPrepTrain['preprocessed_eeg_data'][:,:,12,:]]
+        refDataTest  =  [dataPrepTest['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('Pz'),cutoff1:cutoff2], dataPrepTest['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('Oz'),cutoff1:cutoff2], dataPrepTest['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('POz'),cutoff1:cutoff2]]
+        refDataTrain =  [dataPrepTrain['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('Pz'),cutoff1:cutoff2], dataPrepTrain['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('Oz'),cutoff1:cutoff2], dataPrepTrain['preprocessed_eeg_data'][:,:,dataPrepTest['ch_names'].index('POz'),cutoff1:cutoff2]]
 
         # True Data in Channels:
         trueDataTest = [test_dict['preprocessed_eeg_data'][:,:,test_dict['ch_names'].index('Pz'),:],
@@ -325,39 +356,69 @@ def checkData(test_dict, train_dict, *args, **kwargs):
         trueDataTrain= [train_dict['preprocessed_eeg_data'][:,:,train_dict['ch_names'].index('Pz'),:],
                         train_dict['preprocessed_eeg_data'][:,:,train_dict['ch_names'].index('Oz'),:],
                         train_dict['preprocessed_eeg_data'][:,:,train_dict['ch_names'].index('POz'),:]]
-        fig = plt.figure()
-        for i in range(3):
-            plt.plot( np.mean(np.mean(trueDataTest[i] - refDataTest[i],2),1),label=chanNames[i])
-        plt.legend()
-        plt.savefig("Test_Mean_SamplDiff")
+        
+        pdf1 = PdfPages(os.path.join(checkPath,'ERPs_Diff_test.pdf'))
+
+        for j in range(trueDataTest[0].shape[0]):
+            fig = plt.figure()
+            for i in range(3):
+                plt.plot(np.mean(trueDataTest[i][j,:,:]-refDataTest[i][j,:,:],0),label=chanNames[i])
+            plt.legend()
+            #plt.savefig(os.path.join(checkPath,"Test_Mean_SamplDiff"))
+
+            pdf1.savefig(fig)
+
+            # Destroy the current figure to free up memory
+            plt.close(fig)
+
+        pdf1.close()
 
         fig = plt.figure()
         for i in range(3):
             plt.plot( np.mean(np.mean(trueDataTrain[i] - refDataTrain[i],2),1),label=chanNames[i])
         plt.legend()
-        plt.savefig("Train_Mean_SamplDiff")
+        plt.savefig(os.path.join(checkPath,"Train_Mean_SamplDiff"))
         
     # create a PdfPages object
-    pdf = PdfPages('ERPs.pdf')
+    pdf = PdfPages(os.path.join(checkPath,'ERPs.pdf'))
     # define here the dimension of your figure
 
     # Retrieve the times array and calculate step for readable ticks
-    times = train_dict["times"]
+    times = test_dict["times"]
     step = len(times) // 10  # Adjust this as needed for readability
     ticks = np.arange(0, len(times), step)
     tick_labels = np.round(times[ticks], 2)  # Limit to 2 decimal places for clarity
 
 
-    #### Plot ERPs - For test purposes, assuming enough repetitions
-    for i in range(train_dict['preprocessed_eeg_data'].shape[2]):
-        # Create a new figure
-        fig = plt.figure()
-        plt.title(train_dict['ch_names'][i])
-        # Plot the data
-        plt.plot(np.mean(np.mean(train_dict['preprocessed_eeg_data'][:, :,i, :], axis=1), axis=0))
-        # Customize x-axis ticks and labels
-        plt.xticks(ticks, tick_labels)
-        plt.xlabel("Time (s)")
+    for j in range(test_dict['preprocessed_eeg_data'].shape[0]): #Iterating through Repetitions
+
+        fig = plt.figure(figsize=(20, 20))
+        axes = fig.subplots(2, 2)
+
+        plt.suptitle(f"Image {j}")
+        #### Plot ERPs - For test purposes, assuming enough repetitions
+            # Create a new figure
+        
+            # Plot the data
+        axes[0,0].plot(np.mean(test_dict['preprocessed_eeg_data'][j, :,train_dict['ch_names'].index('Oz'), :],axis=0))
+        axes[0,0].set_title('Oz')
+        axes[0,0].set_xticks(ticks, tick_labels)
+        axes[0,0].set_xlabel("Time (s)")
+
+        axes[0,1].plot(np.mean(test_dict['preprocessed_eeg_data'][j, :,train_dict['ch_names'].index('Pz'), :],axis=0))
+        axes[0,1].set_title('POz')
+        axes[0,1].set_xticks(ticks, tick_labels)
+        axes[0,1].set_xlabel("Time (s)")
+
+        axes[1,0].plot(np.mean(test_dict['preprocessed_eeg_data'][j, :,train_dict['ch_names'].index('O1'), :],axis=0))
+        axes[1,0].set_title('O1')
+        axes[1,0].set_xticks(ticks, tick_labels)
+        axes[1,0].set_xlabel("Time (s)")
+
+        axes[1,1].plot(np.mean(test_dict['preprocessed_eeg_data'][j, :,train_dict['ch_names'].index('O1'), :],axis=0))
+        axes[1,1].set_title('O2')
+        axes[1,1].set_xticks(ticks, tick_labels)
+        axes[1,1].set_xlabel("Time (s)")
         # Save the current figure to the PDF
         pdf.savefig(fig)
 
@@ -368,13 +429,78 @@ def checkData(test_dict, train_dict, *args, **kwargs):
     pdf.close()
 
 
+    ### Check Data for repetitions:
+    correlationMatrixRep = np.zeros([test_dict['preprocessed_eeg_data'].shape[0],test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Images X Channels
+    correlationMatrixImg = np.zeros([test_dict['preprocessed_eeg_data'].shape[0],test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Images X Rep x  Channels
+    cosineSimMatrixRep = np.zeros([test_dict['preprocessed_eeg_data'].shape[0],test_dict['preprocessed_eeg_data'].shape[2]]) # Images X Channels
+    cosineSimmatrixImg = np.zeros([test_dict['preprocessed_eeg_data'].shape[0],test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Images X Rep x Channels
+    
+    ttestres  = np.zeros([test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Rep X Channels
+    wilcoxres  = np.zeros([test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Rep X Channels
+    ttestresCor= np.zeros([test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Rep X Channels
+    wilcoxresCor = np.zeros([test_dict['preprocessed_eeg_data'].shape[1],test_dict['preprocessed_eeg_data'].shape[2]]) # Rep X Channels
+    from scipy import stats
+    for j in range(test_dict['preprocessed_eeg_data'].shape[2]): #Iterating through Channels
+
+        for i in range(test_dict['preprocessed_eeg_data'].shape[0]): #Iterating through images
+            correlationMatrixRep[i,:,j] = np.mean(np.corrcoef(test_dict['preprocessed_eeg_data'][i,:,j,:]),axis=1);
+        
+            matrixDot = np.dot(test_dict['preprocessed_eeg_data'][i,:,j,:],test_dict['preprocessed_eeg_data'][i,:,j,:].T);
+            matrixDiag = np.diag(matrixDot)
+            cosineSimMatrixRep[i,j] = np.mean(matrixDot/np.sqrt(np.dot(matrixDiag,matrixDiag.T))) # Get Mean Cosine Similarity for Given Image x Channel 
+        currentImage = test_dict['preprocessed_eeg_data'] #Averrage through Iterations
+        for i in range(test_dict['preprocessed_eeg_data'].shape[1]):
+            correlationMatrixImg[:,i,j] = np.mean(np.corrcoef(currentImage[:,i,j,:]),axis=0);
+            matrixDot = np.dot(currentImage[:,i,j,:],currentImage[:,i,j,:].T);
+            matrixDiag = np.diag(matrixDot)
+            cosineSimmatrixImg[:,i,j] = np.mean(matrixDot/np.sqrt(np.dot(matrixDiag,matrixDiag.T)),axis=1) # Get Cosine SImilarities for All Images , for given Repetition x Channel 
+
+    ### Test - Both Similarity and Correlation
+
+    for j in range(test_dict['preprocessed_eeg_data'].shape[2]): #Iterating through Channels
+        for i in range(test_dict['preprocessed_eeg_data'].shape[1]): 
+            ttestres[i,j] = stats.ttest_ind(cosineSimMatrixRep[:,j],cosineSimmatrixImg[:,i,j])[0]
+            wilcoxres[i,j] = stats.wilcoxon(cosineSimMatrixRep[:,j],cosineSimmatrixImg[:,i,j])[1]
+            ttestresCor[i,j] = stats.ttest_ind(correlationMatrixRep[:,i,j],correlationMatrixImg[:,i,j])[0]
+            wilcoxresCor[i,j] = stats.wilcoxon(correlationMatrixRep[:,i,j],correlationMatrixImg[:,i,j])[1]
+
+    ### Similarity Test Histogram (Channels X repetitions) - Tstat oF DIFFERENCE 
+    fig = plt.figure(figsize=(20, 20))
+    axes = fig.subplots(2, 2)
+
+    axes[0,0].set_title("Tstats of CosSim between Repetitions and Each Image")
+    currAx = axes[0,0].imshow(ttestres)
+    axes[0,0].set_xlabel("Channel")
+    axes[0,0].set_ylabel("Repetition")
+    fig.colorbar(currAx, ax=axes[0,0])
+
+    axes[0,1].set_title("Tstats of Corr between Repetitions and Each Image")
+    currAx = axes[0,1].imshow(ttestresCor)
+    axes[0,1].set_xlabel("Channel")
+    axes[0,1].set_ylabel("Repetition")
+    fig.colorbar(currAx, ax=axes[0,1])
 
 
+    axes[1,0].set_title("Tstats of CosSim between Repetitions and Each Image")
+    axes[1,0].hist(np.reshape(ttestres,[ttestres.shape[0]*ttestres.shape[1]]),50)
+    axes[1,0].axvline(1.96,color="r")
+    axes[1,1].set_title("Tstats of Corr between Repetitions and Each Image")
+    axes[1,1].hist(np.reshape(ttestresCor,[ttestresCor.shape[0]*ttestresCor.shape[1]]),50)
+    axes[1,1].axvline(1.96,color="r")
 
-def saveData(save_dir,test_dict,train_dict):
+    plt.savefig(os.path.join(checkPath,"Corr_Sim_Ttests"))
+
+    ### Check whether Significant number of those are > 5:
+    
+def saveData(save_dir,test_dict,train_dict,repMean):
 # Saving directories
     import os
     import numpy as np
+
+    if repMean: # ONLY NOW At the end you save your data as follows
+        train_dict['preprocessed_eeg_data'] = np.mean(train_dict['preprocessed_eeg_data'] ,1)
+        test_dict['preprocessed_eeg_data'] = np.mean(test_dict['preprocessed_eeg_data'] ,1)
+
 
     file_name_test = 'preprocessed_eeg_test.npy'
     file_name_train = 'preprocessed_eeg_training.npy'
