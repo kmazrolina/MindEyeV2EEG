@@ -1,0 +1,12 @@
+dataPath: C:\Users\barak\Documents\StableDiffusion\data
+savePath: .\src\data_preprocessing
+subjIds: [1]
+sfreq: 1000
+mnvdim: epochs
+repMean: True
+check: 2
+sessionNumber: 4
+cutoff1: 0.0
+cutoff2: 0.2
+tbef: -0.2
+taft: 0.8
