@@ -16,7 +16,7 @@ cd MindEyeV2EEG/src
 3. Download Data
 
 To train the model you need to download opensource [THINGSEEG2 Dataset](https://osf.io/3jk45/).
-You can either download preprocessed data from [PreprocessedEEG direcotry](https://osf.io/anp5v/) or download [RawEEG](https://osf.io/crxs4/) and preprocess the data using `src/data_preprocessing/load_eeg.py` script for custom preprocessing method. 
+You can either download preprocessed data from [PreprocessedEEG directory](https://osf.io/anp5v/) or download [RawEEG](https://osf.io/crxs4/) and preprocess the data using `src/data_preprocessing/load_eeg.py` script for custom preprocessing method. 
 
 You can donwload raw data using the following script:
 ```
