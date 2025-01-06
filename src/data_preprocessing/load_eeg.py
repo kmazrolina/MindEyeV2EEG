@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     ### Create a Save Path 
     if not os.path.isdir(args.savePath):
-            os.makedirs(args.savePath)
+        os.makedirs(args.savePath)
 
     ### Make parameter Log 
     write_args_to_file(args,os.path.join(args.savePath,"parameters.txt"))
@@ -80,20 +80,20 @@ if __name__ == "__main__":
         args.savePath = args.dataPath
 
     for subjNum in args.subjIds:
-        args.currentSubjNum = subjNum;
+        args.currentSubjNum = subjNum
         print("=== Getting EEG Folders ===\n")
-        print(f"   Data from: {args.dataPath}/raw_data ")
+        print(f"   Data from: {args.dataPath} ")
         print(f"   Subj numb: {subjNum}")
 
         ## Create a new Save - Folder - PreprocessedEEG  
-        savePath = os.path.join(args.savePath, 'preprocessed','sub-'+format(subjNum,'02'))
+        savePath = os.path.join(args.savePath, 'sub-'+format(subjNum,'02'))
         if not os.path.isdir(savePath):
             os.makedirs(savePath)
 
 
         ### Get Subject Raw Data
         print(f"   Getting Raw Data....")
-        subjectPathRaw =  os.path.join(args.dataPath,"raw_data",'sub-'+format(subjNum,'02'))
+        subjectPathRaw =  os.path.join(args.dataPath,'sub-'+format(subjNum,'02'))
         seednum = 20200220
 
         # Test
@@ -118,14 +118,16 @@ if __name__ == "__main__":
 
         print(test_dict)
 
-
+        ### Save EEG Data
+        saveData(savePath,test_dict,train_dict, args.repMean)
+        
         ###  ======Check Data with Original EEG: ======
 
         if args.check == 2: #Data Alignment with original + ERPs 
             ## - Does not work as intended!!! --> Clearly Shuffeling totally changes where the Representations Lay 
             ### Get Preprocessed_Folder 
-            subjectPathPreprocessedTest =os.path.join(args.dataPath,'preproc_data','sub-'+format(subjNum,'02'),"preprocessed_eeg_test.npy")
-            subjectPathPreprocessedTrain =os.path.join(args.dataPath,'preproc_data','sub-'+format(subjNum,'02'),"preprocessed_eeg_training.npy")
+            subjectPathPreprocessedTest =os.path.join(args.savePath,'sub-'+format(subjNum,'02'),"preprocessed_eeg_test.npy")
+            subjectPathPreprocessedTrain =os.path.join(args.savePath,'sub-'+format(subjNum,'02'),"preprocessed_eeg_training.npy")
 
             ### Get Preprocessed Data (For Checking Purposes!)
             dataPrepTest = np.load(subjectPathPreprocessedTest,allow_pickle=True).item()
@@ -141,8 +143,7 @@ if __name__ == "__main__":
         elif args.check == 1: # ERPs Only
             checkData(test_dict,train_dict,args)
 
-        ### Save EEG Data
-        saveData(savePath,test_dict,train_dict, args.repMean)
+        
 
 
 
