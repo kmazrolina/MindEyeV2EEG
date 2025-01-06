@@ -16,16 +16,22 @@
 
 data_dir=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data
 
-# Download THINGSEEG2 raw data for all subjects 1-10
+source ../../fmri/bin/activate
+
+# # Download THINGSEEG2 raw data for all subjects 1-10
 python download_data.py --data_path $data_dir
 
-# Prep image path info for model training 
-# this is not a resource heavy task
+# # Prep image path info for model training 
+# # this is not a resource heavy task
 python image_paths.py --data_path $data_dir
 
-# Preprocess eeg (see preprocessing methods in load_eeg.py)
-python load_eeg.py $data_dir --sfreq 100 --sessionNumber 4
+# Generate image captions
+python image_captions.py --data_path $data_dir 
 
+# # Preprocess eeg (see preprocessing methods in load_eeg.py)
+python load_eeg.py ${data_dir}/RawEEG \
+--savePath /net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data/PreprocessedEEG_THINGS_500ms_rep \
+--subjId 2  --sfreq 100 --repMean --tbef -0.2 --taft 0.8 --cutoff1 0 --cutoff2 0.5 --check 2 --mnvdim epochs
 
 
 
