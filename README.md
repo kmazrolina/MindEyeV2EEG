@@ -16,7 +16,7 @@ cd MindEyeV2EEG/src
 3. Download Data
 
 To train the model you need to download opensource [THINGSEEG2 Dataset](https://osf.io/3jk45/).
-You can either download preprocessed data from [PreprocessedEEG directory](https://osf.io/anp5v/) or download [RawEEG](https://osf.io/crxs4/) and preprocess the data using `src/data_preprocessing/load_eeg.py` script for custom preprocessing method. 
+You can either download preprocessed data from [PreprocessedEEG directory](https://osf.io/anp5v/) or download [RawEEG](https://osf.io/crxs4/) and preprocess the data using `src/data_preprocessing/load_eeg.py` script for custom preprocessing method. See various preprocessing configurations in `src/data_preprocessing/ProposedProcessing.xlsx`
 
 You can donwload raw data using the following script:
 ```
@@ -107,5 +107,5 @@ Evaluation can be run only after running `recon_inference.ipynb`. Run `src/final
 
 
 ### References
-[Gifford, Alessandro T., et al. "A large and rich EEG dataset for modeling human visual object recognition." NeuroImage 264 (2022): 119754.](https://doi.org/10.1016/j.neuroimage.2022.119754)
-[Scotti, Paul S., et al. "MindEye2: Shared-Subject Models Enable fMRI-To-Image With 1 Hour of Data." arXiv preprint arXiv:2403.11207 (2024).](https://arxiv.org/abs/2403.11207)
+- [Gifford, Alessandro T., et al. "A large and rich EEG dataset for modeling human visual object recognition." NeuroImage 264 (2022): 119754.](https://doi.org/10.1016/j.neuroimage.2022.119754)
+- [Scotti, Paul S., et al. "MindEye2: Shared-Subject Models Enable fMRI-To-Image With 1 Hour of Data." arXiv preprint arXiv:2403.11207 (2024).](https://arxiv.org/abs/2403.11207)
