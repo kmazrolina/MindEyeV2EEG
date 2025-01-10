@@ -558,6 +558,7 @@ def checkData(test_dict, train_dict,argms, *args, **kwargs):
     axes[1].set_title(f"Tstats of Corr between Repetitions and Each Image ({round(sum(ttestresCor2 < 1.96)/len(ttestresCor2)*100,2)} %)")
     axes[1].hist(ttestresCor2,8)
     axes[1].axvline(1.96,color="r")
+    plt.savefig(os.path.join(checkPath,"Corr_Sim_TtestsAcross"))
 
     ### Check whether Significant number of those are > 5:
     
