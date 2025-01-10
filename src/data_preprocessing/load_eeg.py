@@ -42,7 +42,7 @@
 
 """
 
-from load_eeg_utils import epoching,mvnn,mergeData,saveData,checkData,write_args_to_file
+from load_eeg_utils import epoching,mvnn,mergeData,saveData,checkData,write_args_to_file,cutoffs
 import argparse
 import numpy  as np
 import os
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     parser.add_argument('--savePath', help='Path to save the results')
     parser.add_argument('--subjIds', nargs='+', type=int, default=[i for i in range (1,11)])
     parser.add_argument('--sfreq',type=int,default=1000)
-    parser.add_argument('--mnvdim',default="epochs")
+    parser.add_argument('--mnvdim',default='time')
     parser.add_argument('--repMean', action="store_true")
     parser.add_argument('--check',default=0,choices=[0,1,2],type=int)
     parser.add_argument('--sessionNumber', default = 4, choices=[1,2,3,4],type=int)
@@ -113,10 +113,10 @@ if __name__ == "__main__":
 
         ### Merge and save the test data ###
 
-        test_dict, train_dict = mergeData(args.sessionNumber, whitened_test, whitened_train, img_conditions_train,
+        test_dict, train_dict = mergeData(args, whitened_test, whitened_train, img_conditions_train,
             ch_names, times, seednum)
 
-        print(test_dict)
+        train_dict2,test_dict2  = cutoffs(args, test_dict, train_dict)
 
 
         ###  ======Check Data with Original EEG: ======
@@ -135,7 +135,7 @@ if __name__ == "__main__":
             print(f"Test  Prep Shape:       Trials: {prepShape[0]};\n       Sessions: {prepShape[1]};\n       Channels: {prepShape[2]};\n       Timepoints: {prepShape[0]};\n" ,prepShape)
             prepShape = dataPrepTrain['preprocessed_eeg_data'].shape # Images x Sessions x Chan (17) x Time (100)
             print(f"Train Prep Shape:       Trials: {prepShape[0]};\n       Sessions: {prepShape[1]};\n       Channels: {prepShape[2]};\n       Timepoints: {prepShape[0]};\n" ,prepShape)
-            checkData(test_dict,train_dict,args,dataPrepTest,dataPrepTrain)
+            checkData(test_dict2,train_dict2,args,dataPrepTest,dataPrepTrain)
 
 
         elif args.check == 1: # ERPs Only

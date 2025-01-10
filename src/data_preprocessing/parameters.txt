@@ -1,8 +1,8 @@
-dataPath: C:\Users\barak\Documents\StableDiffusion\data
+dataPath: C:\Users\barak\Documents\StableDiffusion\eeg_dataset
 savePath: .\src\data_preprocessing
 subjIds: [1]
-sfreq: 1000
-mnvdim: epochs
+sfreq: 100
+mnvdim: time
 repMean: True
 check: 2
 sessionNumber: 4
