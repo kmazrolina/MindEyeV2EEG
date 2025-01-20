@@ -43,6 +43,8 @@ def img_prep(data_absolute_path):
             test_imgpaths = np.append(test_imgpaths, full_path)
     print('\t Test images processed')
     print('Saving...')
+    test_imgpaths.sort()
+    training_imgpaths.sort()
     np.save(os.path.join(data_absolute_path, get_data_dir,'test_imgpaths.npy'), test_imgpaths)
     np.save(os.path.join(data_absolute_path, get_data_dir,'training_imgpaths.npy'), training_imgpaths)
 
