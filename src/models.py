@@ -10,8 +10,253 @@ import random
 import json
 from tqdm import tqdm
 import utils
-
 from diffusers.models.vae import Decoder
+import os
+import torch
+import clip
+import numpy as np
+import torch.nn as nn
+import torchvision.transforms as transforms
+import tqdm
+from einops.layers.torch import Rearrange
+import random
+from torch import Tensor
+from subject_layers.Transformer_EncDec import Encoder, EncoderLayer
+from subject_layers.SelfAttention_Family import FullAttention, AttentionLayer
+from subject_layers.Embed import DataEmbedding
+import numpy as np
+from subject_layers.loss import ClipLoss
+from torch import nn
+
+
+class ATMSConfig:
+    def __init__(self):
+        self.task_name = 'classification'  # Example task name
+        self.seq_len = 250                 # Sequence length
+        self.pred_len = 250                # Prediction length
+        self.output_attention = False      # Whether to output attention weights
+        self.d_model = 250                 # Model dimension
+        self.embed = 'timeF'               # Time encoding method
+        self.freq = 'h'                    # Time frequency
+        self.dropout = 0.25                # Dropout rate
+        self.factor = 1                    # Attention scaling factor
+        self.n_heads = 4                   # Number of attention heads
+        self.e_layers = 1                  # Number of encoder layers
+        self.d_ff = 256                    # Dimension of the feedforward network
+        self.activation = 'gelu'           # Activation function
+        self.enc_in = 63                   # Encoder input dimension (example value)
+
+class iTransformer(nn.Module):
+    def __init__(self, configs, joint_train=False,  num_subjects=10):
+        super(iTransformer, self).__init__()
+        self.task_name = configs.task_name
+        self.seq_len = configs.seq_len
+        self.pred_len = configs.pred_len
+        self.output_attention = configs.output_attention
+        self.enc_in = configs.enc_in
+        # Embedding
+        self.enc_embedding = DataEmbedding(configs.seq_len, configs.d_model, configs.embed, configs.freq, configs.dropout, joint_train=False, num_subjects=num_subjects)
+        # Encoder
+        self.encoder = Encoder(
+            [
+                EncoderLayer(
+                    AttentionLayer(
+                        FullAttention(False, configs.factor, attention_dropout=configs.dropout, output_attention=configs.output_attention),
+                        configs.d_model, configs.n_heads
+                    ),
+                    configs.d_model,
+                    configs.d_ff,
+                    dropout=configs.dropout,
+                    activation=configs.activation
+                ) for l in range(configs.e_layers)
+            ],
+            norm_layer=torch.nn.LayerNorm(configs.d_model)
+        )
+
+    def forward(self, x_enc, x_mark_enc, subject_ids=None):
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, x_mark_enc, subject_ids)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
+        enc_out = enc_out[:, :self.enc_in, :]      
+        # print("enc_out", enc_out.shape)
+        return enc_out
+
+class PatchEmbedding(nn.Module):
+    def __init__(self, emb_size=40):
+        super().__init__()
+        # Revised from ShallowNet
+        self.tsconv = nn.Sequential(
+            nn.Conv2d(1, 40, (1, 25), stride=(1, 1)),
+            nn.AvgPool2d((1, 51), (1, 5)),
+            nn.BatchNorm2d(40),
+            nn.ELU(),
+            nn.Conv2d(40, 40, (63, 1), stride=(1, 1)),
+            nn.BatchNorm2d(40),
+            nn.ELU(),
+            nn.Dropout(0.5),
+        )
+
+        self.projection = nn.Sequential(
+            nn.Conv2d(40, emb_size, (1, 1), stride=(1, 1)),  
+            Rearrange('b e (h) (w) -> b (h w) e'),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        # b, _, _, _ = x.shape
+        x = x.unsqueeze(1)     
+        # print("x", x.shape)   
+        x = self.tsconv(x)
+        # print("tsconv", x.shape)   
+        x = self.projection(x)
+        # print("projection", x.shape)  
+        return x
+
+class ResidualAdd(nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x, **kwargs):
+        res = x
+        x = self.fn(x, **kwargs)
+        x += res
+        return x
+
+class FlattenHead(nn.Sequential):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = x.contiguous().view(x.size(0), -1)
+        return x
+
+class Enc_eeg(nn.Sequential):
+    def __init__(self, emb_size=40, **kwargs):
+        super().__init__(
+            PatchEmbedding(emb_size),
+            FlattenHead()
+        )
+
+class Proj_eeg(nn.Sequential):
+    def __init__(self, embedding_dim=1440, proj_dim=1024, drop_proj=0.5):
+        super().__init__(
+            nn.Linear(embedding_dim, proj_dim),
+            ResidualAdd(nn.Sequential(
+                nn.GELU(),
+                nn.Linear(proj_dim, proj_dim),
+                nn.Dropout(drop_proj),
+            )),
+            nn.LayerNorm(proj_dim),
+        )
+
+class ATMS(nn.Module):    
+    def __init__(self, num_channels=63, sequence_length=250, num_subjects=2, num_features=64, num_latents=1024, num_blocks=1):
+        super(ATMS, self).__init__()
+        default_config = ATMSConfig()
+        default_config.enc_in = num_channels
+        default_config.seq_len = default_config.pred_len =sequence_length
+        self.encoder = iTransformer(default_config)   
+        self.subject_wise_linear = nn.ModuleList([nn.Linear(default_config.d_model, sequence_length) for _ in range(num_subjects)])
+        self.enc_eeg = Enc_eeg()
+        self.proj_eeg = Proj_eeg()        
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.loss_func = ClipLoss()       
+         
+    def forward(self, x, subject_ids):
+        x = self.encoder(x, None, subject_ids)
+        # print(f'After attention shape: {x.shape}')
+        # print("x", x.shape)
+        # x = self.subject_wise_linear[0](x)
+        # print(f'After subject-specific linear transformation shape: {x.shape}')
+        eeg_embedding = self.enc_eeg(x)
+        
+        out = self.proj_eeg(eeg_embedding)
+        return out  
+
+class ATMBrainNetwork(nn.Module):
+    def __init__(self,  num_channels=63, sequence_length=250, num_subjects=1, num_features=64, num_blocks=1, 
+    h=1024, out_dim=768, drop=.15, clip_size=768, blurry_recon=True, clip_scale=1):
+        super().__init__()
+
+        self.h = h
+        self.clip_size = clip_size
+        self.blurry_recon = blurry_recon
+        self.clip_scale = clip_scale
+
+        # Output linear layer
+        self.backbone_linear = nn.Linear(h , out_dim, bias=True) 
+        self.clip_proj = self.projector(clip_size, clip_size, h=clip_size)
+        
+        if self.blurry_recon:
+            self.blin1 = nn.Linear(h,4*28*28,bias=True)
+            self.bdropout = nn.Dropout(.3)
+            self.bnorm = nn.GroupNorm(1, 64)
+            self.bupsampler = Decoder(
+                in_channels=64,
+                out_channels=4,
+                up_block_types=["UpDecoderBlock2D","UpDecoderBlock2D","UpDecoderBlock2D"],
+                block_out_channels=[32, 64, 128],
+                layers_per_block=1,
+            )
+            self.b_maps_projector = nn.Sequential(
+                nn.Conv2d(64, 512, 1, bias=False),
+                nn.GroupNorm(1,512),
+                nn.ReLU(True),
+                nn.Conv2d(512, 512, 1, bias=False),
+                nn.GroupNorm(1,512),
+                nn.ReLU(True),
+                nn.Conv2d(512, 512, 1, bias=True),
+            )
+
+            self.atm_encoder = ATMS(num_channels, sequence_length, num_subjects, num_features, h, num_blocks)
+            
+    def projector(self, in_dim, out_dim, h=2048):
+        return nn.Sequential(
+            nn.LayerNorm(in_dim),
+            nn.GELU(),
+            nn.Linear(in_dim, h),
+            nn.LayerNorm(h),
+            nn.GELU(),
+            nn.Linear(h, h),
+            nn.LayerNorm(h),
+            nn.GELU(),
+            nn.Linear(h, out_dim)
+        )
+
+        
+    def forward(self, x, subj_ids):
+        # make empty tensors
+        c,b = torch.Tensor([0.]), torch.Tensor([[0.],[0.]])
+        
+        x = self.atm_encoder(x, subj_ids)
+            
+        x = x.reshape(x.size(0), -1)
+        backbone = self.backbone_linear(x).reshape(len(x), -1, self.clip_size)
+        if self.clip_scale>0:
+            c = self.clip_proj(backbone)
+
+        if self.blurry_recon:
+            b = self.blin1(x)
+            b = self.bdropout(b)
+            b = b.reshape(b.shape[0], -1, 7, 7).contiguous()
+            b = self.bnorm(b)
+            b_aux = self.b_maps_projector(b).flatten(2).permute(0,2,1)
+            b_aux = b_aux.view(len(b_aux), 49, 512)
+            b = (self.bupsampler(b), b_aux)
+        
+        return backbone, c, b
+class RidgeRegression(torch.nn.Module):
+    # make sure to add weight_decay when initializing optimizer to enable regularization
+    def __init__(self, input_sizes, out_features): 
+        super(RidgeRegression, self).__init__()
+        self.out_features = out_features
+        self.linears = torch.nn.ModuleList([
+                torch.nn.Linear(input_size, out_features) for input_size in input_sizes
+            ])
+    def forward(self, x, subj_idx):
+        out = self.linears[subj_idx](x[:,0]).unsqueeze(1)
+        return out
+    
 class BrainNetwork(nn.Module):
     def __init__(self, h=4096, in_dim=15724, out_dim=768, seq_len=2, n_blocks=4, drop=.15, clip_size=768, blurry_recon=True, clip_scale=1):
         super().__init__()
@@ -116,7 +361,7 @@ class BrainNetwork(nn.Module):
             b = (self.bupsampler(b), b_aux)
         
         return backbone, c, b
-    
+      
 class Clipper(torch.nn.Module):
     def __init__(self, clip_variant, clamp_embs=False, norm_embs=False,
                  hidden_state=False, device=torch.device('cpu')):

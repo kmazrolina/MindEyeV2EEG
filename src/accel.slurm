@@ -4,11 +4,11 @@
 #SBATCH --gres=gpu:4
 #SBATCH --nodes 1
 #SBATCH --ntasks-per-node 1
-#SBATCH --job=mindeye_train      
+#SBATCH --job=mindeye_train_fmri_init_1Subj_ATMencoder     
 #SBATCH --time=48:00:00          # total run time limit (HH:MM:SS)
 #SBATCH -e slurms/%j.err        # first create a "slurms" folder in current directory to store logs
 #SBATCH -o slurms/%j.out
-#SBATCH --mem=200GB
+#SBATCH --mem=500GB
 
 
 
@@ -20,7 +20,7 @@ source ../fmri/bin/activate
 jupyter nbconvert Train.ipynb --to python
 
 export NUM_GPUS=4  # Set to equal gres=gpu:#!
-export BATCH_SIZE=8
+export BATCH_SIZE=4
 export GLOBAL_BATCH_SIZE=$((BATCH_SIZE * NUM_GPUS))
 
 # Make sure another job doesnt use same port, here using random number
@@ -35,7 +35,7 @@ echo MASTER_PORT=${MASTER_PORT}
 echo WORLD_SIZE=${COUNT_NODE}
 
 # multisubject pretraining
-model_name="eeg_multisubject_fmri_init_batch16_4GPUs_1"
+model_name="fmri_init_1Subj_ATMencoder"
 echo model_name=${model_name}
 
 data_path="/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data"
@@ -52,11 +52,11 @@ accelerate launch \
 Train.py \
 --data_path=${data_path} \
 --model_name=${model_name} \
---multi_subject \
+--subj=2 \
 --batch_size=${BATCH_SIZE} \
 --max_lr=3e-4 \
 --mixup_pct=.33 \
---num_epochs=150 \
+--num_epochs=100 \
 --use_prior \
 --prior_scale=30 \
 --clip_scale=1 \
@@ -67,8 +67,9 @@ Train.py \
 --ckpt_interval=1 \
 --ckpt_saving \
 --wandb_log \
---preprocessing_method=THINGSEEG2 \
---multisubject_ckpt=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/train_logs/multisubject_subj01_1024hid_nolow_300ep
+--preprocessing_method=ATM_500ms_rep \
+--preprocessed_eeg_dir=PreprocessedEEG_ATM_500ms_rep \
+--fmri_ckpt=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/train_logs/multisubject_subj01_1024hid_nolow_300ep
 
 # singlesubject finetuning
 #model_name="finetuned_subj01_40sess"
