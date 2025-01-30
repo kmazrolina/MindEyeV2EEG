@@ -8,7 +8,7 @@
 #SBATCH --time=48:00:00          # total run time limit (HH:MM:SS)
 #SBATCH -e slurms/%j.err        # first create a "slurms" folder in current directory to store logs
 #SBATCH -o slurms/%j.out
-#SBATCH --mem=500GB
+#SBATCH --mem=200GB
 
 
 
@@ -35,7 +35,7 @@ echo MASTER_PORT=${MASTER_PORT}
 echo WORLD_SIZE=${COUNT_NODE}
 
 # multisubject pretraining
-model_name="fmri_init_1Subj_ATMencoder"
+model_name="_fmri_init_1Subj_ATMencoder"
 echo model_name=${model_name}
 
 data_path="/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/data"
@@ -48,13 +48,13 @@ accelerate launch \
 --num_machines=$COUNT_NODE \
 --main_process_ip=$MASTER_ADDR \
 --main_process_port=$MASTER_PORT \
---mixed_precision=fp16 \
+--mixed_precision=bf16 \
 Train.py \
 --data_path=${data_path} \
 --model_name=${model_name} \
 --subj=2 \
 --batch_size=${BATCH_SIZE} \
---max_lr=3e-4 \
+--max_lr=3e-7 \
 --mixup_pct=.33 \
 --num_epochs=100 \
 --use_prior \
@@ -68,8 +68,8 @@ Train.py \
 --ckpt_saving \
 --wandb_log \
 --preprocessing_method=ATM_500ms_rep \
---preprocessed_eeg_dir=PreprocessedEEG_ATM_500ms_rep \
---fmri_ckpt=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/train_logs/multisubject_subj01_1024hid_nolow_300ep
+--preprocessed_eeg_dir=PreprocessedEEG_ATM_500ms_rep_corrected \
+--fmri_ckpt=/net/pr2/projects/plgrid/plggrai/kzrobek/MindEyeV2/train_logs/multisubject_subj01_1024hid_nolow_300ep 
 
 # singlesubject finetuning
 #model_name="finetuned_subj01_40sess"
